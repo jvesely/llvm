@@ -31,10 +31,29 @@ class EGOrCaymanPat<dag pattern, dag result> : AMDGPUPat<pattern, result> {
 }
 
 //===----------------------------------------------------------------------===//
-// Evergreen / Cayman store instructions
+// Evergreen / Cayman HWID instructions
 //===----------------------------------------------------------------------===//
 
 let SubtargetPredicate = isEGorCayman in {
+
+let isPseudo = 1, isCodeGenOnly = 1, usesCustomInserter = 1 in {
+
+class MOV_IMM_ID : R600WrapperInst <(outs R600_Reg32:$dst), (ins), "", []>;
+
+} // end let isPseudo = 1, isCodeGenOnly = 1, usesCustomInserter = 1;
+
+def MOV_IMM_ID_WAVE : MOV_IMM_ID;
+def MOV_IMM_ID_SIMD : MOV_IMM_ID;
+def MOV_IMM_ID_SE : MOV_IMM_ID;
+
+def GLOBAL_HW_ID : R600WrapperInst <(outs R600_Reg32:$dst), (ins), "", []> {
+  let isPseudo = 1;
+  let isCodeGenOnly = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Evergreen / Cayman store instructions
+//===----------------------------------------------------------------------===//
 
 class CF_MEM_RAT_CACHELESS <bits<6> rat_inst, bits<4> rat_id, bits<4> mask, dag ins,
                            string name, list<dag> pattern>
