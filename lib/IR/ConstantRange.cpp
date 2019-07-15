@@ -54,6 +54,13 @@ ConstantRange::ConstantRange(APInt L, APInt U)
          "Lower == Upper, but they aren't min or max value!");
 }
 
+ConstantRange::ConstantRange(APFloat Const)
+    : LowerFP(Const), UpperFP(Const), isFloat(true), canBeNaN(Const.isNaN()) {}
+
+ConstantRange::ConstantRange(APFloat Lower, APFloat Upper, bool canBeNaN)
+    : LowerFP(std::move(Lower)), UpperFP(std::move(Upper)), isFloat(true),
+      canBeNaN(canBeNaN) {}
+
 ConstantRange ConstantRange::fromKnownBits(const KnownBits &Known,
                                            bool IsSigned) {
   assert(!Known.hasConflict() && "Expected valid KnownBits");
@@ -281,11 +288,17 @@ ConstantRange ConstantRange::makeExactNoWrapRegion(Instruction::BinaryOps BinOp,
 }
 
 bool ConstantRange::isFullSet() const {
-  return Lower == Upper && Lower.isMaxValue();
+  if (isFloat)
+    return LowerFP.isInfinity() && UpperFP.isInfinity() && canBeNaN;
+  else
+    return Lower == Upper && Lower.isMaxValue();
 }
 
 bool ConstantRange::isEmptySet() const {
-  return Lower == Upper && Lower.isMinValue();
+  if (isFloat)
+    return LowerFP.isNaN() && UpperFP.isNaN() && !canBeNaN;
+  else
+    return Lower == Upper && Lower.isMinValue();
 }
 
 bool ConstantRange::isWrappedSet() const {
@@ -425,6 +438,19 @@ static ConstantRange getPreferredRange(
 
 ConstantRange ConstantRange::intersectWith(const ConstantRange &CR,
                                            PreferredRangeType Type) const {
+
+  if (isFloat || CR.isFloat) {
+    assert(Type == Smallest);
+    assert(isFloat);
+    assert(CR.isFloat);
+    APFloat Upper = llvm::minnum(UpperFP, CR.UpperFP);
+    APFloat Lower = llvm::maxnum(LowerFP, CR.LowerFP);
+    auto Res = Lower.compare(Upper);
+    if (Res != APFloat::cmpLessThan && Res != APFloat::cmpEqual)
+      return getEmptyFP();
+    return ConstantRange(::std::move(Lower), ::std::move(Upper), canBeNaN && CR.canBeNaN);
+  }
+
   assert(getBitWidth() == CR.getBitWidth() &&
          "ConstantRange types don't agree!");
 
@@ -531,11 +557,18 @@ ConstantRange ConstantRange::intersectWith(const ConstantRange &CR,
 
 ConstantRange ConstantRange::unionWith(const ConstantRange &CR,
                                        PreferredRangeType Type) const {
-  assert(getBitWidth() == CR.getBitWidth() &&
-         "ConstantRange types don't agree!");
+  // Floats do not overflow
+  if (isFloat || CR.isFloat) {
+    assert(isFloat && CR.isFloat);
+    return ConstantRange(minnum(LowerFP, CR.LowerFP),
+                         maxnum(UpperFP, CR.UpperFP), canBeNaN || CR.canBeNaN);
+  }
 
   if (   isFullSet() || CR.isEmptySet()) return *this;
   if (CR.isFullSet() ||    isEmptySet()) return CR;
+
+  assert(getBitWidth() == CR.getBitWidth() &&
+         "ConstantRange types don't agree!");
 
   if (!isUpperWrapped() && CR.isUpperWrapped())
     return CR.unionWith(*this, Type);
@@ -637,6 +670,7 @@ ConstantRange ConstantRange::castOp(Instruction::CastOps CastOp,
   }
   case Instruction::FPTrunc:
   case Instruction::FPExt:
+    return getFullFP();
   case Instruction::IntToPtr:
   case Instruction::PtrToInt:
   case Instruction::AddrSpaceCast:
@@ -781,18 +815,38 @@ ConstantRange ConstantRange::binaryOp(Instruction::BinaryOps BinOp,
     return binaryAnd(Other);
   case Instruction::Or:
     return binaryOr(Other);
-  // Note: floating point operations applied to abstract ranges are just
-  // ideal integer operations with a lossy representation
   case Instruction::FAdd:
-    return add(Other);
+    if (isFloat) // We don't support vector types
+      return fadd(Other);
   case Instruction::FSub:
-    return sub(Other);
+    if (isFloat) // We don't support vector types
+      return fsub(Other);
   case Instruction::FMul:
-    return multiply(Other);
+    if (isFloat) // We don't support vector types
+      return fmultiply(Other);
+  case Instruction::FDiv:
+    if (isFloat) // We don't support vector types
+      return fdivide(Other);
   default:
     // Conservatively return getFull set.
-    return getFull();
+    return isFloat ? getFullFP() : getFull();
   }
+}
+
+ConstantRange
+ConstantRange::fadd(const ConstantRange &Other) const {
+  assert(isFloat && Other.isFloat);
+  if (isEmptySet() || Other.isEmptySet())
+    return getEmptyFP();
+  if (isFullSet() || Other.isFullSet())
+    return getFullFP();
+
+  APFloat NewLower = getLowerFP();
+  NewLower.add(Other.getLowerFP(), APFloat::rmTowardNegative);
+  APFloat NewUpper = getUpperFP();
+  NewUpper.add(Other.getUpperFP(), APFloat::rmTowardPositive);
+  return ConstantRange(std::move(NewLower), std::move(NewUpper),
+                       canBeNaN || Other.canBeNaN);
 }
 
 ConstantRange
@@ -826,6 +880,22 @@ ConstantRange ConstantRange::addWithNoSignedWrap(const APInt &Other) const {
 }
 
 ConstantRange
+ConstantRange::fsub(const ConstantRange &Other) const {
+  assert(isFloat && Other.isFloat);
+  if (isEmptySet() || Other.isEmptySet())
+    return getEmptyFP();
+  if (isFullSet() || Other.isFullSet())
+    return getFullFP();
+
+  APFloat NewLower = getLowerFP();
+  NewLower.subtract(Other.getUpperFP(), APFloat::rmTowardNegative);
+  APFloat NewUpper = getUpperFP();
+  NewUpper.subtract(Other.getLowerFP(), APFloat::rmTowardPositive);
+  return ConstantRange(std::move(NewLower), std::move(NewUpper),
+                       canBeNaN || Other.canBeNaN);
+}
+
+ConstantRange
 ConstantRange::sub(const ConstantRange &Other) const {
   if (isEmptySet() || Other.isEmptySet())
     return getEmpty();
@@ -843,6 +913,60 @@ ConstantRange::sub(const ConstantRange &Other) const {
     // We've wrapped, therefore, full set.
     return getFull();
   return X;
+}
+
+ConstantRange
+ConstantRange::fdivide(const ConstantRange &Other) const {
+  assert(isFloat && Other.isFloat);
+  if (isEmptySet() || Other.isEmptySet())
+    return getEmptyFP();
+  // Full set includes infinities. Dividing inf result in +/-inf or NaN
+  // so just return another full set
+  if (isFullSet() || Other.isFullSet())
+    return getFullFP();
+
+  APFloat LL = LowerFP, LU = LowerFP, UL = UpperFP, UU = UpperFP;
+  // The rounding modes make conservative ranges
+  LL.divide(Other.LowerFP, LowerFP.isNegative() && Other.LowerFP.isNegative() ? APFloat::rmTowardPositive : APFloat::rmTowardNegative);
+  LU.divide(Other.UpperFP, LowerFP.isNegative() ? APFloat::rmTowardNegative : APFloat::rmTowardPositive);
+  UL.divide(Other.LowerFP, LowerFP.isNegative() ? APFloat::rmTowardPositive : APFloat::rmTowardNegative);
+  UU.divide(Other.UpperFP, LowerFP.isNegative() && Other.LowerFP.isNegative() ? APFloat::rmTowardNegative : APFloat::rmTowardPositive);
+
+  auto L = {LL, LU, UL, UU};
+  auto Compare = [](const APFloat &A, const APFloat &B) { return A.compare(B) == APFloat::cmpLessThan; };
+  return ConstantRange(std::min(L, Compare), std::max(L, Compare),
+                       canBeNaN || Other.canBeNaN);
+}
+
+ConstantRange
+ConstantRange::fmultiply(const ConstantRange &Other) const {
+  assert(isFloat && Other.isFloat);
+  if (isEmptySet() || Other.isEmptySet())
+    return getEmptyFP();
+  // Inf * 0 is NaN, any other value * 0 is 0
+  const APFloat *Single = getSingleElementFP();
+  const APFloat *OtherSingle = Other.getSingleElementFP();
+  if ((isFullSet() && OtherSingle && OtherSingle->isZero()) ||
+      (Other.isFullSet() && Single && Single->isZero()))
+      return ConstantRange(APFloat::getZero(LowerFP.getSemantics()),
+                           APFloat::getZero(LowerFP.getSemantics()), true);
+
+  // Full set includes infinities. Multiplying inf results in +/-inf so just
+  // return another full set
+  if (isFullSet() || Other.isFullSet())
+    return getFullFP();
+
+  APFloat LL = LowerFP, LU = LowerFP, UL = UpperFP, UU = UpperFP;
+  // The rounding modes make conservative ranges
+  LL.multiply(Other.LowerFP, LowerFP.isNegative() && Other.LowerFP.isNegative() ? APFloat::rmTowardPositive : APFloat::rmTowardNegative);
+  LU.multiply(Other.UpperFP, LowerFP.isNegative() ? APFloat::rmTowardNegative : APFloat::rmTowardPositive);
+  UL.multiply(Other.LowerFP, LowerFP.isNegative() ? APFloat::rmTowardPositive : APFloat::rmTowardNegative);
+  UU.multiply(Other.UpperFP, LowerFP.isNegative() && Other.LowerFP.isNegative() ? APFloat::rmTowardNegative : APFloat::rmTowardPositive);
+
+  auto L = {LL, LU, UL, UU};
+  auto Compare = [](const APFloat &A, const APFloat &B) { return A.compare(B) == APFloat::cmpLessThan; };
+  return ConstantRange(std::min(L, Compare), std::max(L, Compare),
+                       canBeNaN || Other.canBeNaN);
 }
 
 ConstantRange
@@ -897,6 +1021,30 @@ ConstantRange::multiply(const ConstantRange &Other) const {
   ConstantRange SR = Result_sext.truncate(getBitWidth());
 
   return UR.isSizeStrictlySmallerThan(SR) ? UR : SR;
+}
+
+ConstantRange
+ConstantRange::fmax(const ConstantRange &Other) const {
+  // X fmax Y is: range(fmax(X_smin, Y_smin),
+  //                    fmax(X_smax, Y_smax))
+  assert(isFloat);
+  if (isEmptySet() || Other.isEmptySet())
+    return getEmptyFP();
+  return ConstantRange(maxnum(LowerFP, Other.LowerFP),
+                       maxnum(UpperFP, Other.UpperFP),
+		       canBeNaN || Other.canBeNaN);
+}
+
+ConstantRange
+ConstantRange::fmin(const ConstantRange &Other) const {
+  // X fmin Y is: range(fmin(X_smin, Y_smin),
+  //                    fmin(X_smax, Y_smax))
+  assert(isFloat);
+  if (isEmptySet() || Other.isEmptySet())
+    return getEmptyFP();
+  return ConstantRange(minnum(LowerFP, Other.LowerFP),
+                       minnum(UpperFP, Other.UpperFP),
+		       canBeNaN || Other.canBeNaN);
 }
 
 ConstantRange
@@ -1248,7 +1396,17 @@ ConstantRange ConstantRange::ssub_sat(const ConstantRange &Other) const {
   return getNonEmpty(std::move(NewL), std::move(NewU));
 }
 
+ConstantRange ConstantRange::exp() const {
+  assert(isFloat);
+  if (isEmptySet())
+    return getEmptyFP();
+
+  return ConstantRange(llvm::exp(LowerFP, APFloat::rmTowardNegative),
+                       llvm::exp(UpperFP, APFloat::rmTowardPositive), canBeNaN);
+}
+
 ConstantRange ConstantRange::inverse() const {
+  assert(!isFloat);
   if (isFullSet())
     return getEmpty();
   if (isEmptySet())
@@ -1401,11 +1559,21 @@ ConstantRange::OverflowResult ConstantRange::unsignedMulMayOverflow(
 
 void ConstantRange::print(raw_ostream &OS) const {
   if (isFullSet())
-    OS << "full-set";
+    OS << (isFloat ? "full-set-fp" : "full-set");
   else if (isEmptySet())
-    OS << "empty-set";
+    OS << (isFloat ? "empty-set-fp" : "empty-set");
   else
-    OS << "[" << Lower << "," << Upper << ")";
+    if (isFloat) {
+      SmallVector<char, 16> Lo, Up;
+      LowerFP.toString(Lo);
+      UpperFP.toString(Up);
+      OS << "[" << Lo << ", " << Up << "]";
+      if (LowerFP.bitwiseIsEqual(UpperFP))
+        OS << "*";
+      if (canBeNaN)
+        OS << " or NaN";
+    } else
+      OS << "[" << Lower << "," << Upper << ")";
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
