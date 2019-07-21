@@ -3882,6 +3882,19 @@ IEEEFloat frexp(const IEEEFloat &Val, int &Exp, IEEEFloat::roundingMode RM) {
   return scalbn(Val, -Exp, RM);
 }
 
+IEEEFloat exp(const IEEEFloat &Val, IEEEFloat::roundingMode RM) {
+  // Quiet signalling nans.
+  if (Val.isNaN()) {
+    IEEEFloat Quiet(Val);
+    Quiet.makeQuiet();
+    return Quiet;
+  }
+
+  double d = Val.convertToDouble();
+  d = std::exp(d);
+  return IEEEFloat(d);
+}
+
 DoubleAPFloat::DoubleAPFloat(const fltSemantics &S)
     : Semantics(&S),
       Floats(new APFloat[2]{APFloat(semIEEEdouble), APFloat(semIEEEdouble)}) {
@@ -4444,6 +4457,20 @@ DoubleAPFloat frexp(const DoubleAPFloat &Arg, int &Exp,
   if (Arg.getCategory() == APFloat::fcNormal)
     Second = scalbn(Second, -Exp, RM);
   return DoubleAPFloat(semPPCDoubleDouble, std::move(First), std::move(Second));
+}
+
+DoubleAPFloat exp(const DoubleAPFloat &Arg, APFloat::roundingMode RM) {
+  assert(Arg.Semantics == &semPPCDoubleDouble && "Unexpected Semantics");
+  // Quiet signalling nans.
+  if (Arg.Floats[0].isNaN()) {
+    DoubleAPFloat Quiet(Arg);
+    Quiet.makeNaN(false, Arg.isNegative(), nullptr);
+    return Quiet;
+  }
+
+  double d = Arg.Floats[0].convertToDouble();
+  d = std::exp(d);
+  return DoubleAPFloat(semPPCDoubleDouble, APFloat(d), APFloat(0.0));
 }
 
 } // End detail namespace
