@@ -187,6 +187,10 @@ private:
       markConstantRange(ConstantRange(CI->getValue()));
       return;
     }
+    if (ConstantFP *CFP = dyn_cast<ConstantFP>(V)) {
+      markConstantRange(ConstantRange(CFP->getValueAPF()));
+      return;
+    }
     if (isa<UndefValue>(V))
       return;
 
@@ -305,6 +309,9 @@ public:
 
     const auto &CR = getConstantRange();
     const auto &OtherCR = Other.getConstantRange();
+    if (CR.getIsFloat() || OtherCR.getIsFloat())
+      return nullptr;
+
     if (ConstantRange::makeSatisfyingICmpRegion(Pred, OtherCR).contains(CR))
       return ConstantInt::getTrue(Ty);
     if (ConstantRange::makeSatisfyingICmpRegion(

@@ -39,7 +39,7 @@ TEST_F(ValueLatticeTest, ValueLatticeGetters) {
 
   auto FloatTy = Type::getFloatTy(Context);
   auto *C2 = ConstantFP::get(FloatTy, 1.1);
-  EXPECT_TRUE(ValueLatticeElement::get(C2).isConstant());
+  EXPECT_TRUE(ValueLatticeElement::get(C2).isConstantRange());
   EXPECT_TRUE(ValueLatticeElement::getNot(C2).isNotConstant());
 }
 
