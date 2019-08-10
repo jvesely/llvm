@@ -255,7 +255,7 @@ void Float2IntPass::walkForwards() {
     case Instruction::FMul:
       Op = [I](ArrayRef<ConstantRange> Ops) {
         assert(Ops.size() == 2 && "its a binary operator!");
-        auto BinOp = (Instruction::BinaryOps) I->getOpcode();
+        auto BinOp = mapBinOpcode(I->getOpcode());
         return Ops[0].binaryOp(BinOp, Ops[1]);
       };
       break;
