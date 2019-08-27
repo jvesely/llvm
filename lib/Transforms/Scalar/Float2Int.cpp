@@ -196,7 +196,7 @@ void Float2IntPass::walkBackwards(const SmallPtrSetImpl<Instruction*> &Roots) {
       unsigned BW = I->getOperand(0)->getType()->getPrimitiveSizeInBits();
       auto Input = ConstantRange::getFull(BW);
       auto CastOp = (Instruction::CastOps)I->getOpcode();
-      seen(I, validateRange(Input.castOp(CastOp, MaxIntegerBW+1)));
+      seen(I, validateRange(Input.castOp(CastOp, I->getType())));
       continue;
     }
 
@@ -271,7 +271,7 @@ void Float2IntPass::walkForwards() {
         // Note: We're ignoring the casts output size here as that's what the
         // caller expects.
         auto CastOp = (Instruction::CastOps)I->getOpcode();
-        return Ops[0].castOp(CastOp, MaxIntegerBW+1);
+        return Ops[0].castOp(CastOp, I->getType());
       };
       break;
 

@@ -350,7 +350,7 @@ public:
   /// which do change bitwidth, the bitwidth must be consistent with the
   /// requested cast and source bitwidth.
   ConstantRange castOp(Instruction::CastOps CastOp,
-                       uint32_t BitWidth) const;
+                       Type *ResultType) const;
 
   /// Return a new range in the specified integer type, which must
   /// be strictly larger than the current type.  The returned range will

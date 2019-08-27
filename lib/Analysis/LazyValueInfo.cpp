@@ -1053,13 +1053,11 @@ bool LazyValueInfoImpl::solveBlockValueCast(ValueLatticeElement &BBLV,
     return false;
   ConstantRange LHSRange = LHSRes.getValue();
 
-  const unsigned ResultBitWidth = CI->getType()->getIntegerBitWidth();
-
   // NOTE: We're currently limited by the set of operations that ConstantRange
   // can evaluate symbolically.  Enhancing that set will allows us to analyze
   // more definitions.
   BBLV = ValueLatticeElement::getRange(LHSRange.castOp(CI->getOpcode(),
-                                                       ResultBitWidth));
+                                                       CI->getType()));
   return true;
 }
 

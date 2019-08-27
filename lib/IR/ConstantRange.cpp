@@ -636,41 +636,30 @@ ConstantRange ConstantRange::unionWith(const ConstantRange &CR,
 }
 
 ConstantRange ConstantRange::castOp(Instruction::CastOps CastOp,
-                                    uint32_t ResultBitWidth) const {
+                                    Type* ResultType) const {
   switch (CastOp) {
   default:
     llvm_unreachable("unsupported cast type");
   case Instruction::Trunc:
-    return truncate(ResultBitWidth);
+    return truncate(ResultType->getIntegerBitWidth());
   case Instruction::SExt:
-    return signExtend(ResultBitWidth);
+    return signExtend(ResultType->getIntegerBitWidth());
   case Instruction::ZExt:
-    return zeroExtend(ResultBitWidth);
+    return zeroExtend(ResultType->getIntegerBitWidth());
   case Instruction::BitCast:
-    return *this;
+    return ResultType->isFloatingPointTy()
+      ? getFullFloat(ResultType->getFltSemantics())
+      : getFull(ResultType->getIntegerBitWidth());
   case Instruction::FPToUI:
   case Instruction::FPToSI:
-    if (getBitWidth() == ResultBitWidth)
-      return *this;
-    else
-      return getFull();
-  case Instruction::UIToFP: {
     // TODO: use input range if available
-    auto BW = getBitWidth();
-    APInt Min = APInt::getMinValue(BW).zextOrSelf(ResultBitWidth);
-    APInt Max = APInt::getMaxValue(BW).zextOrSelf(ResultBitWidth);
-    return ConstantRange(std::move(Min), std::move(Max));
-  }
-  case Instruction::SIToFP: {
+    return getFull(ResultType->getIntegerBitWidth());
+  case Instruction::UIToFP:
+  case Instruction::SIToFP:
     // TODO: use input range if available
-    auto BW = getBitWidth();
-    APInt SMin = APInt::getSignedMinValue(BW).sextOrSelf(ResultBitWidth);
-    APInt SMax = APInt::getSignedMaxValue(BW).sextOrSelf(ResultBitWidth);
-    return ConstantRange(std::move(SMin), std::move(SMax));
-  }
   case Instruction::FPTrunc:
   case Instruction::FPExt:
-    return getFullFP();
+    return getFullFloat(ResultType->getFltSemantics());
   case Instruction::IntToPtr:
   case Instruction::PtrToInt:
   case Instruction::AddrSpaceCast:
