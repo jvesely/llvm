@@ -3357,20 +3357,17 @@ TEST(APFloatTest, exp) {
   Exp = exp(NegLargestDenormal, RM);
   EXPECT_TRUE(APFloat(APFloat::IEEEdouble(), 1).bitwiseIsEqual(Exp));
 
-
   Exp = exp(Smallest, RM);
   EXPECT_TRUE(APFloat(APFloat::IEEEdouble(), 1).bitwiseIsEqual(Exp));
 
   Exp = exp(NegSmallest, RM);
   EXPECT_TRUE(APFloat(APFloat::IEEEdouble(), 1).bitwiseIsEqual(Exp));
 
-
   Exp = exp(Largest, RM);
   EXPECT_TRUE(Exp.isInfinity() && !Exp.isNegative());
 
   Exp = exp(NegLargest, RM);
   EXPECT_TRUE(Exp.isZero());
-
 
   Exp = exp(PInf, RM);
   EXPECT_TRUE(Exp.isInfinity() && !Exp.isNegative());
@@ -3389,6 +3386,7 @@ TEST(APFloatTest, exp) {
 
   Exp = exp(SNaNWithPayload, RM);
   EXPECT_TRUE(Exp.isNaN() && !Exp.isSignaling());
+  EXPECT_EQ(Payload, Exp.bitcastToAPInt().getLoBits(51));
 
   Exp = exp(APFloat(APFloat::IEEEdouble(), "0x0.ffffp-1"), RM);
   EXPECT_TRUE(APFloat(APFloat::IEEEdouble(), "0x1.a611c5d8c8bb1p+0").bitwiseIsEqual(Exp));
@@ -3397,6 +3395,107 @@ TEST(APFloatTest, exp) {
   EXPECT_TRUE(APFloat(APFloat::IEEEdouble(), "0x1.0000000000002p+0").bitwiseIsEqual(Exp));
 
   Exp = exp(APFloat(APFloat::IEEEdouble(), "0x1.c60f120d9f87cp+51"), RM);
+  EXPECT_TRUE(Exp.isInfinity() && !Exp.isNegative());
+}
+
+TEST(APFloatTest, expf) {
+  const APFloat::roundingMode RM = APFloat::rmNearestTiesToEven;
+
+  APFloat PZero = APFloat::getZero(APFloat::IEEEsingle(), false);
+  APFloat MZero = APFloat::getZero(APFloat::IEEEsingle(), true);
+  APFloat One(1.0f);
+  APFloat MOne(-1.0f);
+  APFloat Two(2.0f);
+  APFloat MTwo(-2.0f);
+
+  APFloat LargestDenormal(APFloat::IEEEsingle(), "0x1.ffffffffffffep-1023");
+  APFloat NegLargestDenormal(APFloat::IEEEsingle(), "-0x1.ffffffffffffep-1023");
+
+  APFloat Smallest = APFloat::getSmallest(APFloat::IEEEsingle(), false);
+  APFloat NegSmallest = APFloat::getSmallest(APFloat::IEEEsingle(), true);
+
+  APFloat Largest = APFloat::getLargest(APFloat::IEEEsingle(), false);
+  APFloat NegLargest = APFloat::getLargest(APFloat::IEEEsingle(), true);
+
+  APFloat PInf = APFloat::getInf(APFloat::IEEEsingle(), false);
+  APFloat MInf = APFloat::getInf(APFloat::IEEEsingle(), true);
+
+  APFloat QPNaN = APFloat::getNaN(APFloat::IEEEsingle(), false);
+  APFloat QMNaN = APFloat::getNaN(APFloat::IEEEsingle(), true);
+  APFloat SNaN = APFloat::getSNaN(APFloat::IEEEsingle(), false);
+
+  // Make sure highest bit of payload is preserved.
+  const APInt Payload(32, (UINT32_C(1) << 23) |
+                      (UINT32_C(1) << 22) |
+                      (UINT32_C(1234) << 2) |
+                      1);
+
+  APFloat SNaNWithPayload = APFloat::getSNaN(APFloat::IEEEsingle(), false,
+                                             &Payload);
+
+  APFloat SmallestNormalized
+    = APFloat::getSmallestNormalized(APFloat::IEEEsingle(), false);
+  APFloat NegSmallestNormalized
+    = APFloat::getSmallestNormalized(APFloat::IEEEsingle(), true);
+
+  APFloat Exp(APFloat::IEEEsingle());
+
+  Exp = exp(PZero, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), 1).bitwiseIsEqual(Exp));
+
+  Exp = exp(MZero, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), 1).bitwiseIsEqual(Exp));
+
+  Exp = exp(One, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), "0x1.5bf0a8b145769p+1").bitwiseIsEqual(Exp));
+
+  Exp = exp(MOne, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), "0x1.78b56362cef38p-2").bitwiseIsEqual(Exp));
+
+  Exp = exp(LargestDenormal, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), 1).bitwiseIsEqual(Exp));
+
+  Exp = exp(NegLargestDenormal, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), 1).bitwiseIsEqual(Exp));
+
+  Exp = exp(Smallest, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), 1).bitwiseIsEqual(Exp));
+
+  Exp = exp(NegSmallest, RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), 1).bitwiseIsEqual(Exp));
+
+  Exp = exp(Largest, RM);
+  EXPECT_TRUE(Exp.isInfinity() && !Exp.isNegative());
+
+  Exp = exp(NegLargest, RM);
+  EXPECT_TRUE(Exp.isZero());
+
+  Exp = exp(PInf, RM);
+  EXPECT_TRUE(Exp.isInfinity() && !Exp.isNegative());
+
+  Exp = exp(MInf, RM);
+  EXPECT_TRUE(Exp.isZero());
+
+  Exp = exp(QPNaN, RM);
+  EXPECT_TRUE(Exp.isNaN());
+
+  Exp = exp(QMNaN, RM);
+  EXPECT_TRUE(Exp.isNaN());
+
+  Exp = exp(SNaN, RM);
+  EXPECT_TRUE(Exp.isNaN() && !Exp.isSignaling());
+
+  Exp = exp(SNaNWithPayload, RM);
+  EXPECT_TRUE(Exp.isNaN() && !Exp.isSignaling());
+  EXPECT_EQ(Payload, Exp.bitcastToAPInt().getLoBits(24));
+
+  Exp = exp(APFloat(APFloat::IEEEsingle(), "0x0.ffffp-1"), RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), "0x1.a611c5d8c8bb1p+0").bitwiseIsEqual(Exp));
+
+  Exp = exp(APFloat(APFloat::IEEEsingle(), "0x1p-23"), RM);
+  EXPECT_TRUE(APFloat(APFloat::IEEEsingle(), "0x1.000002p+0").bitwiseIsEqual(Exp));
+
+  Exp = exp(APFloat(APFloat::IEEEsingle(), "0x1.c60f120d9f87cp+23"), RM);
   EXPECT_TRUE(Exp.isInfinity() && !Exp.isNegative());
 }
 

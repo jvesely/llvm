@@ -3890,9 +3890,17 @@ IEEEFloat exp(const IEEEFloat &Val, IEEEFloat::roundingMode RM) {
     return Quiet;
   }
 
-  double d = Val.convertToDouble();
-  d = std::exp(d);
-  return IEEEFloat(d);
+  if (&Val.getSemantics() == &semIEEEsingle) {
+    float f = Val.convertToFloat();
+    f = std::exp(f);
+    return IEEEFloat(f);
+  }
+  if (&Val.getSemantics() == &semIEEEdouble) {
+    double d = Val.convertToDouble();
+    d = std::exp(d);
+    return IEEEFloat(d);
+  }
+  llvm_unreachable("Unsupported semantics");
 }
 
 DoubleAPFloat::DoubleAPFloat(const fltSemantics &S)
